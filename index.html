@@ -28,6 +28,7 @@
         const { useState, useEffect, useMemo } = React;
 
         // --- 기본 설정 데이터 (초기값) ---
+        // ★ 여기에 SOP 링크 등 주소를 직접 입력하세요 ★
         const DEFAULT_DATA = {
             deviceName: "DTN-030-6",
             modelName: "Sciex",
@@ -40,14 +41,22 @@
             contactPerson: "김담당",
             contactPhone: "010-1234-5678",
             contactEmail: "kim.manager@lab.com",
-            // ▼ 링크는 여기서 수정하세요 ▼
             links: {
-                sopLink: "#",      
+                sopLink: "http://esopnon.dtncro.com/login",       // 예: https://docs.google.com/...
                 manualPdf: "#",    
                 logExcel: "#",     
-                troubleshoot: "#", 
+                troubleshoot: "https://www.waters.com/nextgen/kr/ko/account/sign-in.html", 
                 partsInfo: "#"     
             }
+        };
+
+        // 한국 시간 기준 오늘 날짜 구하기 (YYYY-MM-DD)
+        const getTodayString = () => {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
         };
 
         const App = () => {
@@ -98,22 +107,27 @@
                 setMessage(null);
             };
 
-            // [기능 1] 점검 기록 저장
+            // [기능 1] 점검 기록 저장 (날짜 수정됨)
             const handleLogInspection = () => {
-                const today = new Date();
-                const newLast = today.toISOString().split('T')[0];
+                const todayStr = getTodayString(); // 한국 시간 오늘 날짜
+                const todayDate = new Date(todayStr);
                 
-                const nextDate = new Date(today);
-                nextDate.setDate(today.getDate() + parseInt(deviceData.intervalDays));
-                const newNext = nextDate.toISOString().split('T')[0];
+                const nextDate = new Date(todayDate);
+                nextDate.setDate(todayDate.getDate() + parseInt(deviceData.intervalDays));
+                
+                // 다음 점검일 포맷팅
+                const year = nextDate.getFullYear();
+                const month = String(nextDate.getMonth() + 1).padStart(2, '0');
+                const day = String(nextDate.getDate()).padStart(2, '0');
+                const newNext = `${year}-${month}-${day}`;
 
                 setDeviceData(prev => ({
                     ...prev,
-                    lastInspectionDate: newLast,
+                    lastInspectionDate: todayStr,
                     nextInspectionDate: newNext
                 }));
 
-                setMessage(`✅ 점검 완료! 다음 점검일: ${newNext}`);
+                setMessage(`✅ 점검 완료! (오늘: ${todayStr})`);
                 setTimeout(() => setMessage(null), 3000);
             };
 
@@ -124,9 +138,15 @@
                 const nextDate = new Date(lastDate);
                 nextDate.setDate(lastDate.getDate() + parseInt(tempData.intervalDays));
                 
+                // 다음 점검일 포맷팅
+                const year = nextDate.getFullYear();
+                const month = String(nextDate.getMonth() + 1).padStart(2, '0');
+                const day = String(nextDate.getDate()).padStart(2, '0');
+                const newNext = `${year}-${month}-${day}`;
+                
                 setDeviceData({
                     ...tempData,
-                    nextInspectionDate: nextDate.toISOString().split('T')[0]
+                    nextInspectionDate: newNext
                 });
                 
                 setMessage("✅ 정보가 저장되었습니다.");
@@ -139,6 +159,7 @@
                 setTempData(prev => ({ ...prev, [field]: value }));
             };
             
+            // 링크 변경 핸들러 (SOP 링크는 입력창 삭제됨)
             const handleLinkChange = (field, value) => {
                 setTempData(prev => ({ ...prev, links: { ...prev.links, [field]: value } }));
             };
@@ -250,7 +271,7 @@
                                     
                                     <div className="space-y-4">
                                         <button onClick={handleLogInspection} className="w-full bg-blue-500 text-white py-2 rounded font-bold text-sm hover:bg-blue-600 transition">
-                                            오늘 날짜로 점검 기록
+                                            오늘({getTodayString()}) 날짜로 점검 기록
                                         </button>
                                         <p className="text-xs text-gray-400 text-center -mt-2">다음 점검일이 {deviceData.intervalDays}일 후로 설정됩니다.</p>
                                         <hr />
@@ -275,12 +296,8 @@
                                             <input type="date" className="form-input" value={tempData.acquisitionDate} onChange={e=>handleChange('acquisitionDate', e.target.value)} />
                                         </div>
 
-                                        {/* 링크 수정 필드 */}
-                                        <label className="block text-xs font-bold text-gray-500 uppercase">SOP 링크</label>
-                                        <input className="form-input" value={tempData.links.sopLink} onChange={e=>handleLinkChange('sopLink', e.target.value)} placeholder="http://..." />
-
                                         {/* 담당자 정보 */}
-                                        <label className="block text-xs font-bold text-gray-500 uppercase mt-2">담당자 정보</label>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase mt-2">담당자 정보 수정</label>
                                         <input className="form-input" value={tempData.contactPerson} onChange={e=>handleChange('contactPerson', e.target.value)} placeholder="담당자 이름" />
                                         <div className="grid grid-cols-2 gap-2">
                                             <input className="form-input" value={tempData.contactPhone} onChange={e=>handleChange('contactPhone', e.target.value)} placeholder="연락처" />
