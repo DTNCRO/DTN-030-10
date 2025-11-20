@@ -5,14 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HPLC 기기 관리</title>
     
-    <!-- 1. 필수 라이브러리 불러오기 (React, Tailwind, FontAwesome) -->
+    <!-- 라이브러리 로드 -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- 2. 파이어베이스 라이브러리 -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
@@ -32,8 +30,7 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useCallback } = React;
 
-        // --- ★중요★: 여기에 선생님의 Firebase 설정을 넣어야 저장이 됩니다! ---
-        // 지금은 화면 확인을 위해 비워두었지만, 나중에 채워넣으셔야 해요.
+        // --- ★ Firebase 설정 (점검일 저장용, 없으면 화면만 작동) ★ ---
         const firebaseConfig = {
             apiKey: "여기에_API_KEY_입력",
             authDomain: "여기에_AUTH_DOMAIN_입력",
@@ -43,24 +40,21 @@
             appId: "여기에_APP_ID_입력"
         };
 
-        // Firebase 초기화 (설정이 없으면 에러 방지용 더미 모드로 실행)
+        // Firebase 초기화
         let db, auth;
         try {
             if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "여기에_API_KEY_입력") {
                 firebase.initializeApp(firebaseConfig);
                 db = firebase.firestore();
                 auth = firebase.auth();
-            } else {
-                console.warn("Firebase 설정이 없습니다. 화면만 표시됩니다.");
             }
         } catch (e) { console.error(e); }
 
-        // --- 설정 ---
         const COLLECTION_PATH = 'hplc_maintenance';
         const DOC_ID = 'hplc01';
         const DEFAULT_INTERVAL = 365;
 
-        // --- 기본 데이터 ---
+        // --- ★★★ 여기에 링크와 기기 정보를 직접 입력하세요 ★★★ ---
         const DEFAULT_DATA = {
             deviceName: "DTN-030-6",
             modelName: "Sciex",
@@ -74,16 +68,16 @@
             contactPhone: "010-1234-5678",
             contactEmail: "kim.manager@lab.com",
             links: {
-                sopLink: "#",
-                manualPdf: "#",
-                logExcel: "#",
-                troubleshoot: "#", 
-                partsInfo: "#" 
+                // ▼ 아래 따옴표("") 안에 실제 주소를 붙여넣으세요 ▼
+                sopLink: "http://esopnon.dtncro.com/login",      // 예: "https://docs.google.com/..."
+                manualPdf: "#",    // 기기 매뉴얼 PDF 주소
+                logExcel: "#",     // 점검일지 엑셀 주소
+                troubleshoot: "https://www.waters.com/nextgen/kr/ko/account/sign-in.html", // 고장 접수 링크
+                partsInfo: "#"     // 부품 정보 링크
             }
         };
 
         const App = () => {
-            // 상태 관리
             const [deviceData, setDeviceData] = useState(DEFAULT_DATA);
             const [isEditMode, setIsEditMode] = useState(false);
             const [isUpdating, setIsUpdating] = useState(false);
@@ -91,37 +85,36 @@
             const [showContactModal, setShowContactModal] = useState(false);
             const [userId, setUserId] = useState(null);
 
-            // 임시 입력 상태
+            // 임시 입력 상태 (링크 제외)
             const [tempData, setTempData] = useState(DEFAULT_DATA);
-            const [tempLinkSop, setTempLinkSop] = useState("");
 
-            // 1. 데이터 불러오기 (Firebase가 연결된 경우)
+            // 데이터 불러오기
             useEffect(() => {
                 if (db) {
                     const unsubscribe = db.collection(COLLECTION_PATH).doc(DOC_ID).onSnapshot((doc) => {
                         if (doc.exists) {
-                            setDeviceData({ ...DEFAULT_DATA, ...doc.data(), links: { ...DEFAULT_DATA.links, ...doc.data().links } });
+                            // DB 데이터가 있으면 가져오되, 링크는 코드에 적힌 것(DEFAULT_DATA)을 우선 사용하거나 DB 것을 사용할지 결정
+                            // 여기서는 편의상 DB에 있는 텍스트 정보 + 코드에 적은 링크를 합칩니다.
+                            const dbData = doc.data();
+                            setDeviceData(prev => ({
+                                ...prev,
+                                ...dbData,
+                                links: DEFAULT_DATA.links // ★ 링크는 코드에 적힌 값을 강제로 사용 (고정)
+                            }));
                         }
                     });
-                    
-                    // 익명 로그인
-                    auth.signInAnonymously().then(userCredential => {
-                        setUserId(userCredential.user.uid);
-                    }).catch(error => console.log("Auth Error:", error));
-
+                    auth.signInAnonymously().then(u => setUserId(u.user.uid)).catch(e=>console.log(e));
                     return () => unsubscribe();
                 }
             }, []);
 
-            // 날짜 계산 함수
             const calculateDDay = (dateString) => {
                 if (!dateString) return null;
                 const target = new Date(dateString);
-                target.setHours(0, 0, 0, 0);
+                target.setHours(0,0,0,0);
                 const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                const diffTime = target.getTime() - today.getTime();
-                return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                today.setHours(0,0,0,0);
+                return Math.ceil((target - today) / (1000 * 60 * 60 * 24));
             };
 
             const formatDate = (dateInput) => {
@@ -140,21 +133,15 @@
                 '사용중': 'bg-blue-500/90',
                 '정상 가동 중': 'bg-blue-500/90'
             }[deviceData.status] || 'bg-white/20';
-
             const dDayColor = dDay === null || dDay > 7 ? 'text-green-600 bg-green-100' : (dDay > 0 ? 'text-yellow-600 bg-yellow-100' : 'text-red-600 bg-red-100');
 
-            // 편집 모드 토글
             const toggleEditMode = () => {
-                if (!isEditMode) {
-                    setTempData(deviceData);
-                    setTempLinkSop(deviceData.links?.sopLink || "");
-                }
+                if (!isEditMode) setTempData(deviceData);
                 setIsEditMode(!isEditMode);
             };
 
-            // 핸들러: 점검 기록
             const handleLogInspection = async () => {
-                if (!db) return alert("Firebase 설정이 필요합니다.");
+                if (!db) return alert("저장하려면 Firebase 설정이 필요합니다.");
                 setIsUpdating(true);
                 try {
                     const today = new Date();
@@ -173,17 +160,21 @@
                 setTimeout(() => setMessage(null), 3000);
             };
 
-            // 핸들러: 정보 수정
             const handleUpdateInfo = async () => {
-                if (!db) return alert("Firebase 설정이 필요합니다.");
+                if (!db) return alert("저장하려면 Firebase 설정이 필요합니다.");
                 setIsUpdating(true);
                 try {
-                    const interval = parseInt(tempData.intervalDays);
-                    // 주기가 바뀌었으면 다음 점검일도 재계산 (선택사항, 여기선 유지)
+                    // 링크는 저장하지 않고 기기 정보와 주기만 저장
                     await db.collection(COLLECTION_PATH).doc(DOC_ID).set({
-                        ...tempData,
-                        intervalDays: interval,
-                        links: { ...deviceData.links, sopLink: tempLinkSop }
+                        deviceName: tempData.deviceName,
+                        modelName: tempData.modelName,
+                        status: tempData.status,
+                        serialNo: tempData.serialNo,
+                        acquisitionDate: tempData.acquisitionDate,
+                        contactPerson: tempData.contactPerson,
+                        contactPhone: tempData.contactPhone,
+                        contactEmail: tempData.contactEmail,
+                        intervalDays: parseInt(tempData.intervalDays)
                     }, { merge: true });
                     setMessage("✅ 정보 저장 완료!");
                 } catch(e) { setMessage(`❌ 실패: ${e.message}`); }
@@ -208,8 +199,8 @@
 
                     <div className="px-6 -mt-6 relative z-20 space-y-6 pb-10">
                         
-                        {/* SOP Link */}
-                        <a href={deviceData.links?.sopLink || "#"} target="_blank" className="block bg-white p-4 rounded-2xl shadow-md border border-yellow-100 flex items-center justify-between hover:shadow-lg transition transform active:scale-[0.98]">
+                        {/* SOP Link Card */}
+                        <a href={deviceData.links.sopLink} target="_blank" className="block bg-white p-4 rounded-2xl shadow-md border border-yellow-100 flex items-center justify-between hover:shadow-lg transition transform active:scale-[0.98]">
                             <div className="flex items-center">
                                 <div className="w-12 h-12 bg-yellow-50 text-yellow-600 rounded-xl flex items-center justify-center text-xl mr-4">
                                     <i className="fa-solid fa-link"></i>
@@ -225,12 +216,12 @@
                         {/* 4-Grid Menu */}
                         <div className="grid grid-cols-2 gap-4">
                             {[
-                                { title: "기기 매뉴얼", icon: "fa-book", color: "text-blue-600", bg: "bg-blue-50", link: deviceData.links?.manualPdf },
-                                { title: "기기이력", icon: "fa-clock-rotate-left", color: "text-green-600", bg: "bg-green-50", link: deviceData.links?.logExcel },
-                                { title: "고장 시 접수", icon: "fa-triangle-exclamation", color: "text-orange-500", bg: "bg-orange-50", link: deviceData.links?.troubleshoot },
-                                { title: "부품 보유 현황 및 정보", icon: "fa-boxes-stacked", color: "text-purple-600", bg: "bg-purple-50", link: deviceData.links?.partsInfo }
+                                { title: "기기 매뉴얼", icon: "fa-book", color: "text-blue-600", bg: "bg-blue-50", link: deviceData.links.manualPdf },
+                                { title: "기기이력", icon: "fa-clock-rotate-left", color: "text-green-600", bg: "bg-green-50", link: deviceData.links.logExcel },
+                                { title: "고장 시 접수", icon: "fa-triangle-exclamation", color: "text-orange-500", bg: "bg-orange-50", link: deviceData.links.troubleshoot },
+                                { title: "부품 보유 현황 및 정보", icon: "fa-boxes-stacked", color: "text-purple-600", bg: "bg-purple-50", link: deviceData.links.partsInfo }
                             ].map((item, idx) => (
-                                <a key={idx} href={item.link || "#"} target="_blank" className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition flex flex-col items-center text-center justify-center h-32">
+                                <a key={idx} href={item.link} target="_blank" className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition flex flex-col items-center text-center justify-center h-32">
                                     <div className={`w-12 h-12 ${item.bg} ${item.color} rounded-xl flex items-center justify-center text-2xl mb-3`}>
                                         <i className={`fa-solid ${item.icon}`}></i>
                                     </div>
@@ -272,7 +263,7 @@
                             </button>
                         </div>
 
-                        {/* Admin Panel */}
+                        {/* Admin Panel (링크 수정 기능 제거됨) */}
                         {isEditMode && (
                             <div className="bg-white border-2 border-blue-100 rounded-2xl p-5 shadow-xl animate-fade-in-down">
                                 <h3 className="font-bold text-blue-900 mb-4">⚙️ 관리자 설정</h3>
@@ -282,27 +273,32 @@
                                     <button onClick={handleLogInspection} disabled={isUpdating} className="w-full bg-blue-500 text-white py-2 rounded font-bold text-sm">
                                         오늘 날짜로 점검 기록
                                     </button>
-                                    
+                                    <p className="text-xs text-gray-400 text-center -mt-2">클릭 시 다음 점검일이 {deviceData.intervalDays}일 후로 자동 설정됩니다.</p>
                                     <hr />
                                     
                                     <div className="grid grid-cols-2 gap-2">
                                         <input className="form-input" value={tempData.deviceName} onChange={e=>setTempData({...tempData, deviceName:e.target.value})} placeholder="기기명" />
                                         <select className="form-select" value={tempData.status} onChange={e=>setTempData({...tempData, status:e.target.value})}>
-                                            <option>정상 가동 중</option><option>수리중</option><option>점검중</option>
+                                            <option>정상 가동 중</option><option>수리중</option><option>점검중</option><option>사용중</option>
                                         </select>
                                     </div>
-                                    <input className="form-input" value={tempData.modelName} onChange={e=>setTempData({...tempData, modelName:e.target.value})} placeholder="모델명" />
-                                    <div className="relative">
-                                        <input type="number" className="form-input" value={tempData.intervalDays} onChange={e=>setTempData({...tempData, intervalDays:e.target.value})} placeholder="점검 주기" />
-                                        <span className="absolute right-3 top-3 text-xs text-gray-400">일</span>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <input className="form-input" value={tempData.modelName} onChange={e=>setTempData({...tempData, modelName:e.target.value})} placeholder="모델명" />
+                                        <div className="relative">
+                                            <input type="number" className="form-input" value={tempData.intervalDays} onChange={e=>setTempData({...tempData, intervalDays:e.target.value})} placeholder="주기" />
+                                            <span className="absolute right-3 top-3 text-xs text-gray-400">일</span>
+                                        </div>
                                     </div>
-                                    <input className="form-input bg-yellow-50" value={tempLinkSop} onChange={e=>setTempLinkSop(e.target.value)} placeholder="SOP 링크 URL" />
+                                    {/* 링크 입력 칸 삭제됨: 링크는 코드 상단의 DEFAULT_DATA에서 수정하세요 */}
                                     
                                     <input className="form-input" value={tempData.contactPerson} onChange={e=>setTempData({...tempData, contactPerson:e.target.value})} placeholder="담당자 이름" />
-                                    <input className="form-input" value={tempData.contactPhone} onChange={e=>setTempData({...tempData, contactPhone:e.target.value})} placeholder="연락처" />
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <input className="form-input" value={tempData.contactPhone} onChange={e=>setTempData({...tempData, contactPhone:e.target.value})} placeholder="연락처" />
+                                        <input className="form-input" value={tempData.contactEmail} onChange={e=>setTempData({...tempData, contactEmail:e.target.value})} placeholder="이메일" />
+                                    </div>
                                     
                                     <button onClick={handleUpdateInfo} disabled={isUpdating} className="w-full bg-gray-800 text-white py-2 rounded font-bold text-sm">
-                                        전체 저장
+                                        전체 정보 저장
                                     </button>
                                 </div>
                             </div>
