@@ -37,10 +37,11 @@
         let auth = null;
         const COLLECTION_PATH = 'hplc_maintenance';
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const DOC_PATH = `/artifacts/${appId}/public/data/${COLLECTION_PATH}/hplc01`;
+        // DOC_PATH를 고정 ID로 설정하여 모든 사용자가 동일한 기기 정보를 공유하도록 합니다.
+        const DOC_PATH = `/artifacts/${appId}/public/data/${COLLECTION_PATH}/hplc01`; 
         const DEFAULT_INTERVAL = 365;
 
-        // --- ★★★ 수정할 곳: 링크와 기기 정보 ★★★ ---
+        // --- 초기 기기 정보 및 링크 설정 ---
         const DEFAULT_DATA = {
             deviceName: "DTN-030-6",
             modelName: "Sciex",
@@ -69,8 +70,7 @@
             const [isUpdating, setIsUpdating] = useState(false);
             const [message, setMessage] = useState(null);
             const [showContactModal, setShowContactModal] = useState(false);
-            const [isAuthReady, setIsAuthReady] = useState(false);
-
+            const [isAuthReady, setIsAuthReady] = useState(false); // Firebase 인증 준비 상태
             const [tempData, setTempData] = useState(DEFAULT_DATA);
 
             // 1. Firebase 초기화 및 인증
@@ -92,14 +92,25 @@
                         db = firebase.firestore();
                         auth = firebase.auth();
                         
+                        // 인증 처리
                         if (initialAuthToken) {
                             await auth.signInWithCustomToken(initialAuthToken);
                         } else {
                             await auth.signInAnonymously();
                         }
+                        
                         setIsAuthReady(true);
+                        // 인증 상태 로깅 (디버깅용)
+                        firebase.auth().onAuthStateChanged(user => {
+                            if (user) {
+                                console.log("Firebase Auth Success. UID:", user.uid);
+                            } else {
+                                console.log("Firebase Auth failed or signed out.");
+                            }
+                        });
+
                     } catch (error) {
-                        console.error("Auth Error:", error);
+                        console.error("Auth/Init Error:", error);
                         setIsAuthReady(true);
                     }
                 };
@@ -108,7 +119,8 @@
 
             // 2. 데이터 실시간 동기화
             useEffect(() => {
-                if (!isAuthReady || !db) return;
+                // 인증 준비가 안됐거나 DB 인스턴스가 없으면 실행하지 않음
+                if (!isAuthReady || !db) return; 
 
                 const unsubscribe = db.doc(DOC_PATH).onSnapshot((doc) => {
                     if (doc.exists) {
@@ -116,17 +128,18 @@
                         setDeviceData(prev => ({
                             ...prev,
                             ...dbData,
-                            // 링크는 코드에 적힌 고정값을 우선 사용 (덮어쓰기)
+                            // 링크는 코드에 적힌 고정값을 우선 사용 (사용자가 링크를 편집할 수 없도록 방지)
                             links: DEFAULT_DATA.links 
                         }));
                     } else {
+                        // 문서가 없으면 기본 데이터로 생성
                         db.doc(DOC_PATH).set(DEFAULT_DATA).catch(console.error);
                         setDeviceData(DEFAULT_DATA);
                     }
-                }, (err) => console.error(err));
+                }, (err) => console.error("Firestore Snapshot Error:", err));
 
                 return () => unsubscribe();
-            }, [isAuthReady]);
+            }, [isAuthReady]); // isAuthReady가 true가 될 때만 실행
 
             // 날짜 계산 함수
             const calculateDDay = (dateString) => {
@@ -165,7 +178,13 @@
 
             // 점검 기록 핸들러
             const handleLogInspection = async () => {
-                if (!db) return alert("데이터베이스 연결 실패");
+                // DB와 인증 상태 모두 확인
+                if (!db || !auth.currentUser) {
+                    setMessage("❌ 데이터베이스 연결 실패. 잠시 후 다시 시도해 주세요.");
+                    setTimeout(() => setMessage(null), 3000);
+                    return;
+                }
+                
                 setIsUpdating(true);
                 try {
                     const today = new Date();
@@ -180,16 +199,31 @@
                     }, { merge: true });
                     
                     setMessage(`✅ 점검 완료! 차기 점검일: ${formatDate(newNext)}`);
-                } catch(e) { setMessage(`❌ 오류: ${e.message}`); }
+                } catch(e) { 
+                    console.error("Inspection Log Error:", e);
+                    setMessage(`❌ 점검 기록 중 오류 발생: ${e.message}`); 
+                }
                 setIsUpdating(false);
                 setTimeout(() => setMessage(null), 3000);
             };
 
             // 정보 수정 핸들러
             const handleUpdateInfo = async () => {
-                if (!db) return alert("데이터베이스 연결 실패");
+                // DB와 인증 상태 모두 확인
+                if (!db || !auth.currentUser) {
+                    setMessage("❌ 데이터베이스 연결 실패. 잠시 후 다시 시도해 주세요.");
+                    setTimeout(() => setMessage(null), 3000);
+                    return;
+                }
+
                 setIsUpdating(true);
                 try {
+                    // 입력된 intervalDays가 숫자인지 확인
+                    const interval = parseInt(tempData.intervalDays);
+                    if (isNaN(interval) || interval <= 0) {
+                        throw new Error("점검 주기는 1일 이상의 유효한 숫자여야 합니다.");
+                    }
+
                     await db.doc(DOC_PATH).set({
                         deviceName: tempData.deviceName,
                         modelName: tempData.modelName,
@@ -199,15 +233,25 @@
                         contactPerson: tempData.contactPerson,
                         contactPhone: tempData.contactPhone,
                         contactEmail: tempData.contactEmail,
-                        intervalDays: parseInt(tempData.intervalDays)
+                        intervalDays: interval
                     }, { merge: true });
                     setMessage("✅ 정보 저장 완료!");
-                } catch(e) { setMessage(`❌ 오류: ${e.message}`); }
+                } catch(e) { 
+                    console.error("Update Info Error:", e);
+                    setMessage(`❌ 정보 저장 중 오류 발생: ${e.message}`); 
+                }
                 setIsUpdating(false);
                 setTimeout(() => setMessage(null), 3000);
             };
 
-            if (!isAuthReady) return <div className="flex h-screen justify-center items-center text-gray-500"><i className="fas fa-spinner fa-spin text-2xl mr-2"></i> 로딩 중...</div>;
+            // Firebase 인증 준비가 안 되었을 때 로딩 화면
+            if (!isAuthReady) {
+                return (
+                    <div className="flex h-screen justify-center items-center text-gray-500">
+                        <i className="fas fa-spinner fa-spin text-2xl mr-2"></i> 데이터 로딩 중...
+                    </div>
+                );
+            }
 
             return (
                 <div className="min-h-screen bg-gray-100 p-4 font-sans">
